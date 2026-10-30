@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Карты">
+<meta name="theme-color" content="#0E0F14">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<title>Карты</title>
+<style>
+  :root {
+    --bg-top: #181B26;
+    --bg-bottom: #0B0C10;
+    --accent: #FFC24B;
+    --text: #FFFFFF;
+    --muted: rgba(255,255,255,.5);
+    --faint: rgba(255,255,255,.4);
+    --danger: #FF6B6B;
+    --sheet: #1E212B;
+    --radius: 28px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
+  body {
+    background: linear-gradient(var(--bg-top), var(--bg-bottom)) fixed, var(--bg-bottom);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
+  }
+  button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+
+  #app {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  .top { display: flex; align-items: center; padding: 12px 16px 8px 24px; }
+  .top > div { flex: 1; }
+  h1 { margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -.5px; }
+  .sub { color: var(--muted); font-size: 14px; }
+  .add {
+    width: 52px; height: 52px; border-radius: 50%;
+    background: var(--accent); color: #000;
+    font-size: 34px; font-weight: 400; line-height: 52px;
+    box-shadow: 0 6px 18px rgba(0,0,0,.45);
+  }
+  .add:active { transform: scale(.94); }
+
+  #stage { position: relative; flex: 1; perspective: 1100px; touch-action: none; overflow: hidden; }
+  .card {
+    position: absolute; left: 50%; top: 50%;
+    border-radius: var(--radius); overflow: hidden;
+    background: #262A36 center / cover no-repeat;
+    box-shadow: 0 24px 48px rgba(0,0,0,.6);
+    will-change: transform, opacity;
+  }
+  .card::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit;
+    background: linear-gradient(135deg, rgba(255,255,255,.22), transparent 35%, rgba(0,0,0,.15));
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.15);
+  }
+
+  .empty {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 0 52px;
+  }
+  .empty-card {
+    width: 100%; max-width: 340px; aspect-ratio: .62; border-radius: var(--radius);
+    border: 2px solid rgba(255,255,255,.15); background: rgba(255,255,255,.04);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px;
+  }
+  .empty-card .plus { color: var(--accent); font-size: 72px; line-height: 1; }
+  .empty-card h2 { margin: 16px 0 8px; font-size: 22px; font-weight: 600; }
+  .empty-card p { margin: 0; color: rgba(255,255,255,.55); font-size: 14px; line-height: 1.4; }
+
+  #below { padding-bottom: 4px; }
+  .label {
+    text-align: center; font-size: 20px; font-weight: 600; min-height: 26px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 24px;
+  }
+  .scrub {
+    margin: 12px 24px 0; height: 52px; border-radius: 26px;
+    background: rgba(255,255,255,.07); box-shadow: inset 0 0 0 1px rgba(255,255,255,.10);
+    display: flex; align-items: center; padding: 0 16px; touch-action: none;
+  }
+  .scrub > span { color: var(--faint); font-size: 24px; }
+  .dots { flex: 1; display: flex; justify-content: center; align-items: center; }
+  .dot { height: 7px; width: 7px; margin: 0 3px; border-radius: 4px; background: rgba(255,255,255,.25); transition: width .2s, background .2s; }
+  .dot.on { width: 22px; background: var(--accent); }
+  .hint { margin: 12px 24px; color: var(--faint); font-size: 12px; text-align: center; }
+
+  /* Fullscreen viewer */
+  .viewer { position: fixed; inset: 0; background: #000; z-index: 50; touch-action: none; overflow: hidden; }
+  .viewer[hidden] { display: none; }
+  .vtrack { position: absolute; inset: 0; display: flex; will-change: transform; }
+  .vtrack.anim { transition: transform .3s cubic-bezier(.2,.8,.2,1); }
+  .slide {
+    flex: 0 0 100%; height: 100%; overflow: hidden; position: relative;
+    padding: calc(env(safe-area-inset-top) + 96px) 0 calc(env(safe-area-inset-bottom) + 16px);
+  }
+  .slide img { width: 100%; height: 100%; object-fit: contain; transform-origin: center; will-change: transform; pointer-events: none; }
+  .vbar {
+    position: absolute; left: 0; right: 0; top: 0; z-index: 2;
+    display: flex; align-items: center;
+    padding: calc(env(safe-area-inset-top) + 16px) 16px 24px 24px;
+    background: linear-gradient(rgba(0,0,0,.85), transparent);
+  }
+  .vbar > div { flex: 1; min-width: 0; }
+  #vtitle { font-size: 20px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .round {
+    width: 48px; height: 48px; border-radius: 50%;
+    background: rgba(255,255,255,.18); font-size: 20px;
+  }
+  .viewer .tip {
+    position: absolute; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom) + 10px);
+    text-align: center; color: rgba(255,255,255,.35); font-size: 12px; pointer-events: none;
+  }
+
+  /* Bottom sheet for rename / delete */
+  .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 60; display: flex; align-items: flex-end; }
+  .backdrop[hidden] { display: none; }
+  .sheet {
+    width: 100%; background: var(--sheet); border-radius: 24px 24px 0 0;
+    padding: 20px 20px calc(env(safe-area-inset-bottom) + 20px);
+    animation: up .25s ease-out;
+  }
+  @keyframes up { from { transform: translateY(100%); } }
+  .sheet h3 { margin: 0 0 14px; font-size: 20px; }
+  .sheet p { margin: 0 0 16px; color: var(--muted); }
+  .sheet input {
+    width: 100%; font-size: 17px; padding: 14px 16px; border-radius: 14px;
+    border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.06); color: var(--text);
+    outline: none; -webkit-user-select: text; user-select: text;
+  }
+  .sheet input:focus { border-color: var(--accent); }
+  .row { display: flex; gap: 10px; margin-top: 16px; }
+  .btn { flex: 1; padding: 14px; border-radius: 14px; font-size: 17px; font-weight: 600; background: rgba(255,255,255,.08); }
+  .btn.primary { background: var(--accent); color: #000; }
+  .btn.danger { color: var(--danger); }
+
+  .install {
+    position: fixed; left: 16px; right: 16px; bottom: calc(env(safe-area-inset-bottom) + 16px); z-index: 40;
+    background: var(--sheet); border-radius: 18px; padding: 14px 44px 14px 16px; font-size: 14px; line-height: 1.4;
+    box-shadow: 0 10px 30px rgba(0,0,0,.5);
+  }
+  .install[hidden] { display: none; }
+  .install b { color: var(--accent); }
+  .install button { position: absolute; right: 8px; top: 8px; width: 32px; height: 32px; color: var(--muted); font-size: 18px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <div>
+      <h1>Карты</h1>
+      <div id="count" class="sub"></div>
+    </div>
+    <button id="add" class="add" aria-label="Добавить карту">+</button>
+  </header>
+  <main id="stage"></main>
+  <div id="below">
+    <div id="label" class="label"></div>
+    <div id="scrub" class="scrub"><span>‹</span><div id="dots" class="dots"></div><span>›</span></div>
+    <p class="hint">Тяните полосу — быстрая прокрутка · удерживайте карту для настроек</p>
+  </div>
+</div>
+
+<input type="file" id="file" accept="image/*" multiple hidden>
+
+<div id="viewer" class="viewer" hidden>
+  <div id="vtrack" class="vtrack"></div>
+  <div class="vbar">
+    <div>
+      <div id="vtitle"></div>
+      <div id="vcount" class="sub"></div>
+    </div>
+    <button id="vclose" class="round" aria-label="Закрыть">✕</button>
+  </div>
+  <div class="tip">Сделайте экран ярче, чтобы штрихкод считался</div>
+</div>
+
+<div id="backdrop" class="backdrop" hidden>
+  <div id="sheet" class="sheet"></div>
+</div>
+
+<div id="install" class="install" hidden>
+  Чтобы установить: нажмите <b>Поделиться</b> внизу Safari → <b>«На экран Домой»</b>.
+  <button id="installClose" aria-label="Скрыть">✕</button>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------- Storage (IndexedDB: image blobs stay on the device) ----------
+  const DB_NAME = 'cardwallet', STORE = 'cards';
+  let dbPromise;
+  function db() {
+    dbPromise ??= new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(STORE, { keyPath: 'id' });
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    return dbPromise;
+  }
+  async function tx(mode, fn) {
+    const d = await db();
+    return new Promise((resolve, reject) => {
+      const t = d.transaction(STORE, mode);
+      const result = fn(t.objectStore(STORE));
+      t.oncomplete = () => resolve(result && 'result' in result ? result.result : undefined);
+      t.onerror = () => reject(t.error);
+    });
+  }
+  const dbAll = () => tx('readonly', s => s.getAll());
+  const dbPut = rec => tx('readwrite', s => s.put(rec));
+  const dbDelete = id => tx('readwrite', s => s.delete(id));
+
+  // ---------- State ----------
+  let cards = [];          // {id, label, added, order, blob, url}
+  let pos = 0;             // fractional index of the centered card
+  let anim = null;
+
+  const $ = id => document.getElementById(id);
+  const stage = $('stage'), dotsEl = $('dots'), labelEl = $('label'), countEl = $('count');
+
+  const nameOf = (c, i) => c.label || `Карта ${i + 1}`;
+  const clampPos = p => Math.max(0, Math.min(cards.length - 1, p));
+
+  async function load() {
+    const recs = await dbAll();
+    recs.sort((a, b) => a.order - b.order);
+    cards = recs.map(r => ({ ...r, url: URL.createObjectURL(r.blob) }));
+    build();
+  }
+
+  // ---------- Carousel ----------
+  let cardEls = [];
+  function build() {
+    stage.innerHTML = '';
+    cardEls = [];
+    countEl.textContent = cards.length ? `в кошельке: ${cards.length}` : 'кошелёк пуст';
+    $('below').style.visibility = cards.length ? 'visible' : 'hidden';
+    if (!cards.length) {
+      stage.innerHTML = `<div class="empty"><div class="empty-card" id="emptyAdd">
+        <div class="plus">+</div><h2>Пока нет карт</h2>
+        <p>Нажмите «+» справа вверху и выберите скриншот карты Lidl, Rimi, Maxima, Top…</p></div></div>`;
+      $('emptyAdd').onclick = pick;
+      return;
+    }
+    cards.forEach((c, i) => {
+      const el = document.createElement('div');
+      el.className = 'card';
+      el.dataset.index = i;
+      el.style.backgroundImage = `url("${c.url}")`;
+      stage.appendChild(el);
+      cardEls.push(el);
+    });
+    pos = clampPos(pos);
+    render();
+  }
+
+  function cardSize() {
+    const w = Math.min(stage.clientWidth - 104, (stage.clientHeight - 24) * 0.62);
+    return { w, h: w / 0.62 };
+  }
+
+  function render() {
+    if (!cards.length) return;
+    const { w, h } = cardSize();
+    cardEls.forEach((el, i) => {
+      const o = i - pos;                       // >0 right of center, <0 left
+      const d = Math.min(Math.abs(o), 1);
+      if (Math.abs(o) > 3.2) { el.style.visibility = 'hidden'; return; }
+      el.style.visibility = 'visible';
+      el.style.width = w + 'px';
+      el.style.height = h + 'px';
+      const s = 1 - 0.22 * d;
+      const rot = Math.max(-60, Math.min(60, -o * 42));
+      el.style.transform =
+        `translate(-50%, -50%) translateX(${o * w * 0.78}px) rotateY(${rot}deg) scale(${s})`;
+      el.style.opacity = 1 - 0.5 * d;
+      el.style.zIndex = 100 - Math.round(Math.abs(o) * 10);
+    });
+    const cur = Math.round(clampPos(pos));
+    labelEl.textContent = nameOf(cards[cur], cur);
+    renderDots(cur);
+  }
+
+  function renderDots(cur) {
+    const n = cards.length, win = 15;
+    const start = Math.max(0, Math.min(cur - (win >> 1), n - win));
+    let html = '';
+    for (let i = start; i < Math.min(n, start + win); i++) html += `<div class="dot${i === cur ? ' on' : ''}"></div>`;
+    dotsEl.innerHTML = html;
+  }
+
+  function animateTo(target, ms = 380) {
+    cancelAnimationFrame(anim);
+    target = clampPos(target);
+    const from = pos, t0 = performance.now();
+    const step = now => {
+      const k = Math.min(1, (now - t0) / ms);
+      pos = from + (target - from) * (1 - Math.pow(1 - k, 3));
+      render();
+      if (k < 1) anim = requestAnimationFrame(step);
+    };
+    anim = requestAnimationFrame(step);
+  }
+
+  // Rubber-band past the first / last card.
+  const soften = p => p < 0 ? p * 0.3 : p > cards.length - 1 ? cards.length - 1 + (p - cards.length + 1) * 0.3 : p;
+
+  const capture = (el, e) => { try { el.setPointerCapture(e.pointerId); } catch {} };
+
+  // Tracks a horizontal drag and its release velocity (px/ms).
+  function tracker(e) {
+    const samples = [{ x: e.clientX, t: e.timeStamp }];
+    return {
+      x0: e.clientX, y0: e.clientY,
+      add(ev) { samples.push({ x: ev.clientX, t: ev.timeStamp }); if (samples.length > 6) samples.shift(); },
+      velocity() {
+        const a = samples[0], b = samples[samples.length - 1];
+        return b.t > a.t ? (b.x - a.x) / (b.t - a.t) : 0;
+      }
+    };
+  }
+
+  // Swipe on the cards: one card per swipe (like the Android version).
+  let drag = null;
+  stage.addEventListener('pointerdown', e => {
+    if (!cards.length) return;
+    cancelAnimationFrame(anim);
+    const cardEl = e.target.closest('.card');
+    drag = { ...tracker(e), start: pos, moved: false, index: cardEl ? +cardEl.dataset.index : -1, longFired: false };
+    drag.timer = setTimeout(() => {
+      if (drag && !drag.moved && drag.index >= 0) { drag.longFired = true; openSheet(cards[drag.index]); }
+    }, 550);
+    capture(stage, e);
+  });
+  stage.addEventListener('pointermove', e => {
+    if (!drag) return;
+    drag.add(e);
+    const dx = e.clientX - drag.x0;
+    if (Math.abs(dx) > 8 || Math.abs(e.clientY - drag.y0) > 8) { drag.moved = true; clearTimeout(drag.timer); }
+    if (!drag.moved || drag.longFired) return;
+    pos = soften(drag.start - dx / (cardSize().w * 0.78));
+    render();
+  });
+  const endDrag = e => {
+    if (!drag) return;
+    clearTimeout(drag.timer);
+    const d = drag; drag = null;
+    if (d.longFired) return;
+    if (!d.moved) {
+      // Tap: centered card opens fullscreen, a side card comes to the center.
+      if (d.index < 0) return animateTo(Math.round(pos));
+      return d.index === Math.round(pos) ? openViewer(d.index) : animateTo(d.index);
+    }
+    const v = d.velocity(), base = Math.round(d.start);
+    let target = Math.round(pos);
+    if (target === base && Math.abs(v) > 0.3) target = base + (v < 0 ? 1 : -1);
+    animateTo(Math.max(base - 1, Math.min(base + 1, target)));
+  };
+  stage.addEventListener('pointerup', endDrag);
+  stage.addEventListener('pointercancel', endDrag);
+
+  // Bottom strip: dragging spins the carousel ~3.5x faster than swiping the cards.
+  const scrub = $('scrub');
+  let sdrag = null;
+  scrub.addEventListener('pointerdown', e => {
+    if (!cards.length) return;
+    cancelAnimationFrame(anim);
+    sdrag = { ...tracker(e), lastX: e.clientX };
+    capture(scrub, e);
+  });
+  scrub.addEventListener('pointermove', e => {
+    if (!sdrag) return;
+    sdrag.add(e);
+    pos = soften(pos - (e.clientX - sdrag.lastX) * 3.5 / cardSize().w);
+    sdrag.lastX = e.clientX;
+    render();
+  });
+  const endScrub = () => {
+    if (!sdrag) return;
+    const extra = Math.round(-sdrag.velocity() * 1000 / 1500);
+    sdrag = null;
+    animateTo(Math.round(clampPos(pos)) + extra, 450);
+  };
+  scrub.addEventListener('pointerup', endScrub);
+  scrub.addEventListener('pointercancel', endScrub);
+
+  addEventListener('resize', render);
+
+  // ---------- Adding cards ----------
+  const fileInput = $('file');
+  function pick() { fileInput.value = ''; fileInput.click(); }
+  $('add').onclick = pick;
+
+  const loadsAsImage = url => new Promise(res => {
+    const img = new Image();
+    img.onload = () => res(img.naturalWidth > 0);
+    img.onerror = () => res(false);
+    img.src = url;
+  });
+  const newId = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+
+  fileInput.addEventListener('change', async () => {
+    const files = [...fileInput.files];
+    if (!files.length) return;
+    const firstNew = cards.length;
+    let order = cards.reduce((m, c) => Math.max(m, c.order), 0);
+    for (const f of files) {
+      const url = URL.createObjectURL(f);
+      if (!(await loadsAsImage(url))) { URL.revokeObjectURL(url); continue; }
+      const rec = { id: newId(), label: '', added: Date.now(), order: ++order, blob: f };
+      await dbPut(rec);
+      cards.push({ ...rec, url });
+    }
+    if (cards.length === firstNew) return alert('Не удалось открыть изображение.');
+    navigator.storage?.persist?.();
+    build();
+    animateTo(firstNew);
+  });
+
+  // ---------- Fullscreen viewer: swipe between screenshots, pinch / double tap to zoom ----------
+  const viewer = $('viewer'), vtrack = $('vtrack');
+  let vIdx = 0, zoom = { s: 1, x: 0, y: 0 }, wakeLock = null;
+
+  function openViewer(i) {
+    vIdx = i;
+    vtrack.innerHTML = cards.map(c => `<div class="slide"><img src="${c.url}" alt=""></div>`).join('');
+    viewer.hidden = false;
+    resetZoom();
+    placeTrack(false);
+    history.pushState({ viewer: true }, '');
+    navigator.wakeLock?.request('screen').then(l => (wakeLock = l)).catch(() => {});
+  }
+  function closeViewer(fromHistory) {
+    if (viewer.hidden) return;
+    viewer.hidden = true;
+    wakeLock?.release().catch(() => {});
+    wakeLock = null;
+    pos = vIdx;
+    render();
+    if (!fromHistory) history.back();
+  }
+  $('vclose').onclick = () => closeViewer(false);
+  addEventListener('popstate', () => closeViewer(true));
+
+  function placeTrack(animated, dx = 0) {
+    vtrack.classList.toggle('anim', animated);
+    vtrack.style.transform = `translateX(${-vIdx * viewer.clientWidth + dx}px)`;
+    $('vtitle').textContent = nameOf(cards[vIdx], vIdx);
+    $('vcount').textContent = `${vIdx + 1} / ${cards.length}`;
+  }
+  const curImg = () => vtrack.children[vIdx]?.firstElementChild;
+  function applyZoom() {
+    const img = curImg();
+    if (img) img.style.transform = `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.s})`;
+  }
+  function resetZoom() {
+    zoom = { s: 1, x: 0, y: 0 };
+    [...vtrack.querySelectorAll('img')].forEach(i => (i.style.transform = ''));
+  }
+
+  const pointers = new Map();
+  let vdrag = null, pinch = null, lastTap = 0;
+  const dist = () => { const [a, b] = [...pointers.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+  const mid = () => { const [a, b] = [...pointers.values()]; return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; };
+
+  viewer.addEventListener('pointerdown', e => {
+    if (e.target.closest('.vbar')) return;
+    capture(viewer, e);
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 2) {
+      vdrag = null;
+      placeTrack(true);
+      pinch = { d: dist(), s: zoom.s, m: mid(), x: zoom.x, y: zoom.y };
+    } else if (pointers.size === 1) {
+      vdrag = { ...tracker(e), zx: zoom.x, zy: zoom.y, moved: false };
+    }
+  });
+  viewer.addEventListener('pointermove', e => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && pointers.size >= 2) {
+      const m = mid();
+      zoom.s = Math.max(1, Math.min(6, pinch.s * dist() / pinch.d));
+      zoom.x = pinch.x + (m.x - pinch.m.x);
+      zoom.y = pinch.y + (m.y - pinch.m.y);
+      if (zoom.s === 1) zoom.x = zoom.y = 0;
+      applyZoom();
+      return;
+    }
+    if (!vdrag) return;
+    vdrag.add(e);
+    const dx = e.clientX - vdrag.x0, dy = e.clientY - vdrag.y0;
+    if (Math.abs(dx) > 6 || Math.abs(dy) > 6) vdrag.moved = true;
+    if (zoom.s > 1) {
+      zoom.x = vdrag.zx + dx; zoom.y = vdrag.zy + dy;
+      applyZoom();
+    } else {
+      const edge = (vIdx === 0 && dx > 0) || (vIdx === cards.length - 1 && dx < 0);
+      placeTrack(false, edge ? dx * 0.3 : dx);
+    }
+  });
+  const vEnd = e => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.delete(e.pointerId);
+    if (pinch) {
+      if (pointers.size < 2) pinch = null;
+      if (pointers.size === 1) {
+        const [p] = [...pointers.values()];
+        vdrag = { x0: p.x, y0: p.y, zx: zoom.x, zy: zoom.y, moved: true, add() {}, velocity: () => 0 };
+      }
+      return;
+    }
+    if (!vdrag) return;
+    const d = vdrag; vdrag = null;
+    if (!d.moved) {
+      const now = e.timeStamp;
+      if (now - lastTap < 300) {
+        // Double tap toggles zoom around the tapped point.
+        if (zoom.s > 1) zoom = { s: 1, x: 0, y: 0 };
+        else {
+          const r = viewer.getBoundingClientRect();
+          zoom = { s: 2.5, x: -(e.clientX - r.width / 2) * 1.5, y: -(e.clientY - r.height / 2) * 1.5 };
+        }
+        applyZoom();
+        lastTap = 0;
+      } else lastTap = now;
+      return;
+    }
+    if (zoom.s > 1) return;
+    const dx = e.clientX - d.x0, v = d.velocity(), w = viewer.clientWidth;
+    if ((dx < -w * 0.2 || v < -0.4) && vIdx < cards.length - 1) vIdx++;
+    else if ((dx > w * 0.2 || v > 0.4) && vIdx > 0) vIdx--;
+    resetZoom();
+    placeTrack(true);
+  };
+  viewer.addEventListener('pointerup', vEnd);
+  viewer.addEventListener('pointercancel', vEnd);
+  addEventListener('resize', () => { if (!viewer.hidden) placeTrack(false); });
+
+  // ---------- Rename / delete sheet ----------
+  const backdrop = $('backdrop'), sheet = $('sheet');
+  const esc = s => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+  function closeSheet() { backdrop.hidden = true; }
+  backdrop.addEventListener('click', e => { if (e.target === backdrop) closeSheet(); });
+
+  function openSheet(card) {
+    navigator.vibrate?.(15);
+    sheet.innerHTML = `<h3>Карта</h3>
+      <input id="nameIn" placeholder="Название (Lidl, Rimi…)" value="${esc(card.label)}" maxlength="40">
+      <div class="row"><button class="btn danger" id="del">Удалить</button><button class="btn primary" id="save">Сохранить</button></div>`;
+    backdrop.hidden = false;
+    $('save').onclick = async () => {
+      card.label = $('nameIn').value.trim();
+      await dbPut(stripUrl(card));
+      closeSheet(); render();
+    };
+    $('nameIn').onkeydown = e => { if (e.key === 'Enter') $('save').click(); };
+    $('del').onclick = () => confirmDelete(card);
+  }
+  function confirmDelete(card) {
+    sheet.innerHTML = `<h3>Удалить карту?</h3>
+      <p>Карта «${esc(card.label || 'без названия')}» будет удалена из кошелька.</p>
+      <div class="row"><button class="btn" id="cancel">Отмена</button><button class="btn danger" id="yes">Удалить</button></div>`;
+    $('cancel').onclick = closeSheet;
+    $('yes').onclick = async () => {
+      await dbDelete(card.id);
+      URL.revokeObjectURL(card.url);
+      cards = cards.filter(c => c.id !== card.id);
+      closeSheet(); build();
+    };
+  }
+  const stripUrl = ({ url, ...rec }) => rec;
+
+  // ---------- Install hint (iPhone Safari, not yet on the home screen) ----------
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const standalone = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
+  let hintDismissed = false;
+  try { hintDismissed = localStorage.getItem('installHint') === 'off'; } catch {}
+  if (isIOS && !standalone && !hintDismissed) $('install').hidden = false;
+  $('installClose').onclick = () => {
+    $('install').hidden = true;
+    try { localStorage.setItem('installHint', 'off'); } catch {}
+  };
+
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+
+  load().catch(err => { console.error(err); build(); });
+})();
+</script>
+</body>
+</html>
